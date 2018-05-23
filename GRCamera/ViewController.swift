@@ -45,7 +45,7 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        self.captureQueue = DispatchQueue(label: "com.richnco.app.GRCamera.AVCameraCaptureQueue") //dispatch_queue_create(, DISPATCH_QUEUE_SERIAL);
+        self.captureQueue = DispatchQueue(label: "com.richnco.app.GRCamera.AVCameraCaptureQueue")
         
         self.setupCameraView()
     }
@@ -77,10 +77,10 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         let device = AVCaptureDevice.default(for: .video)!
         self.imageDedectionConfidence = 0.0
     
-        let session = AVCaptureSession()   //[[AVCaptureSession alloc] init];
+        let session = AVCaptureSession()
         self.captureSesssion = session
         
-        session.beginConfiguration()            //[session beginConfiguration];
+        session.beginConfiguration()
         self.captureDevice = device
         
         do {
@@ -119,7 +119,7 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
                 
             }
         }
-        session.commitConfiguration()   //[session commitConfiguration];
+        session.commitConfiguration()  
     }
     
     var borderDetectFrame: Bool = false
@@ -190,28 +190,15 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
             self.borderDetectFrame = false
         }
         
-//        if self.borderDetectLastRectangleFeature != nil {
-            result = self.drawHighlightOverlayForPoints(result, topLeft: borderDetectLastRectangleFeature.topLeft, topRight: borderDetectLastRectangleFeature.topRight, bottomLeft: borderDetectLastRectangleFeature.bottomLeft, bottomRight: borderDetectLastRectangleFeature.bottomRight)
-//        }
+        result = self.drawHighlightOverlayForPoints(result, topLeft: borderDetectLastRectangleFeature.topLeft, topRight: borderDetectLastRectangleFeature.topRight, bottomLeft: borderDetectLastRectangleFeature.bottomLeft, bottomRight: borderDetectLastRectangleFeature.bottomRight)
         
-//        let biggestRectFeature = self.findBiggestRect(image: result)
-//        result = self.drawHighlightOverlayForPoints(result, topLeft: biggestRectFeature.topLeft, topRight: biggestRectFeature.topRight, bottomLeft: biggestRectFeature.bottomLeft, bottomRight: biggestRectFeature.bottomRight)
-        
-        DispatchQueue.main.async {
+       DispatchQueue.main.async {
             if (self.context != nil ) && (self.coreImageContext != nil) {
                 self.coreImageContext.draw(result, in: self.viewCameraPreview.bounds, from: result.extent)
                 self.context.presentRenderbuffer(Int(GL_RENDERBUFFER))
                 self.glkView.setNeedsDisplay()
             }
         }
-        
-        
-        
-        // 이 부분에 biggestRect 값을 출력
-//        DispatchQueue.main.async {
-//            print("Output = Lx: \(biggestRect?.topLeft.x ?? 0), Ly = \(biggestRect?.topLeft.y ?? 0)\n"
-//                + "Rx = \(biggestRect?.topRight.x ?? 0), Ry = \(biggestRect?.topRight.y ?? 0)")
-//
-//        }
+
     }
 }
