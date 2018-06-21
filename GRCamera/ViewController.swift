@@ -11,7 +11,7 @@ import AVFoundation
 import CoreImage
 import GLKit
 
-class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDelegate {
+class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDelegate, AVCapturePhotoCaptureDelegate {
 
     @IBOutlet weak var viewCameraPreview: UIView!
     
@@ -32,6 +32,9 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     
     var imageDedectionConfidence: CGFloat = 0.0
     var borderDetectTimeKeeper: Timer!
+    var borderDetectLastRectangleFeature = CIRectangleFeature()
+    
+    var isCapturing: Bool = false
     
     let detector = CIDetector(
         ofType: CIDetectorTypeRectangle,
@@ -45,7 +48,7 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        self.captureQueue = DispatchQueue(label: "com.richnco.app.GRCamera.AVCameraCaptureQueue")
+        self.captureQueue = DispatchQueue(label: "com.richnco.app.GRCamera.AVCameraCaptureQueue") //dispatch_queue_create(, DISPATCH_QUEUE_SERIAL);
         
         self.setupCameraView()
     }
@@ -72,15 +75,26 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         self.coreImageContext = CIContext.init(eaglContext: self.context)
     }
     
+    func hideGLKView(_ hidden: Bool, completion: @escaping()->Void) {
+        UIView.animate(withDuration: 0.1, animations: {() -> Void in
+            self.glkView?.alpha = (hidden) ? 0.0 : 1.0
+        }, completion: {(_ finished: Bool) -> Void in
+            if !finished {
+                return
+            }
+            completion()
+        })
+    }
+    
     func setupCameraView() {
         self.createGLKView()
         let device = AVCaptureDevice.default(for: .video)!
         self.imageDedectionConfidence = 0.0
     
-        let session = AVCaptureSession()
+        let session = AVCaptureSession()   //[[AVCaptureSession alloc] init];
         self.captureSesssion = session
         
-        session.beginConfiguration()
+        session.beginConfiguration()            //[session beginConfiguration];
         self.captureDevice = device
         
         do {
@@ -119,7 +133,7 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
                 
             }
         }
-        session.commitConfiguration()  
+        session.commitConfiguration()   //[session commitConfiguration];
     }
     
     var borderDetectFrame: Bool = false
@@ -176,7 +190,41 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         return biggestRect
     }
     
-    var borderDetectLastRectangleFeature = CIRectangleFeature()
+    func filteredImageUsingEnhanceFilterOnImage(image: CIImage) -> CIImage {
+        let filter = CIFilter.init(name: "CIColorControls")
+        filter?.setValuesForKeys([kCIInputImageKey: image,
+                                  "inputBrightness": 0.0,
+                                  "inputContrast": 1.14,
+                                  "inputSaturation": 0.0])
+        
+        return (filter?.outputImage)!
+    }
+    
+    func filteredImageUsingContrastFilterOnImage(image: CIImage) -> CIImage {
+        let filter = CIFilter.init(name: "CIColorControls")
+        filter?.setValuesForKeys([kCIInputImageKey: image,
+                                  "inputContrast": 1.0])
+        
+        return (filter?.outputImage)!
+    }
+    
+    func rectangleDetectionConfidenceHighEnough(confidence: CGFloat) -> Bool {
+        return confidence > 1.0
+    }
+    
+    func correctPerspectiveForImage(image:CIImage, rectangleFeature: CIRectangleFeature) -> CIImage {
+        let perspectiveCorrection = CIFilter(name: "CIPerspectiveCorrection")
+        
+        perspectiveCorrection?.setValue(image, forKey: "inputImage")
+        perspectiveCorrection?.setValue(CIVector(cgPoint: rectangleFeature.topLeft), forKey: "inputTopLeft")
+        perspectiveCorrection?.setValue(CIVector(cgPoint: rectangleFeature.topRight), forKey: "inputTopRight")
+        perspectiveCorrection?.setValue(CIVector(cgPoint: rectangleFeature.bottomLeft), forKey: "inputBottomLeft")
+        perspectiveCorrection?.setValue(CIVector(cgPoint: rectangleFeature.bottomRight), forKey: "inputBottomRight")
+        
+        let outputImage = perspectiveCorrection?.outputImage
+    
+        return outputImage!
+    }
     
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         
@@ -192,13 +240,80 @@ class ViewController: UIViewController, AVCaptureVideoDataOutputSampleBufferDele
         
         result = self.drawHighlightOverlayForPoints(result, topLeft: borderDetectLastRectangleFeature.topLeft, topRight: borderDetectLastRectangleFeature.topRight, bottomLeft: borderDetectLastRectangleFeature.bottomLeft, bottomRight: borderDetectLastRectangleFeature.bottomRight)
         
-       DispatchQueue.main.async {
+        DispatchQueue.main.async {
             if (self.context != nil ) && (self.coreImageContext != nil) {
                 self.coreImageContext.draw(result, in: self.viewCameraPreview.bounds, from: result.extent)
                 self.context.presentRenderbuffer(Int(GL_RENDERBUFFER))
                 self.glkView.setNeedsDisplay()
             }
         }
-
+    }
+    
+    func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
+        print("Save Photo...")
+        /*
+        weak var weakSelf = self
+        
+        self.hideGLKView(true, completion: {
+            weakSelf?.hideGLKView(false, completion: {
+                weakSelf?.hideGLKView(true, completion: {})
+            })
+        })
+        
+        self.isCapturing = true
+        
+        var videoConnection: AVCaptureConnection? = nil
+        for connection: AVCaptureConnection in (stillImageOutput?.connections)! {
+            for port: AVCaptureInput.Port in connection.inputPorts {
+                if port.mediaType == AVMediaType.video{
+                    videoConnection = connection
+                    break
+                }
+            }
+            if videoConnection != nil {
+                break
+            }
+        }
+        
+        let imageData = photo.fileDataRepresentation()
+        var enhacedImage = CIImage.init(data: imageData!)
+        
+        enhacedImage = self.filteredImageUsingContrastFilterOnImage(image: enhacedImage!)
+        
+//        if self.rectangleDetectionConfidenceHighEnough(confidence: self.imageDedectionConfidence) {
+            let rectangleFeature = self.findBiggestRect(image: enhacedImage!)
+            
+//            if rectangleFeature.accessibilityActivate() {
+                enhacedImage = self.correctPerspectiveForImage(image: enhacedImage!, rectangleFeature: rectangleFeature)
+//            }
+        
+//        }
+        DispatchQueue.main.async {
+            UIGraphicsBeginImageContext(CGSize(width: (enhacedImage?.extent.size.height)!, height: (enhacedImage?.extent.size.width)!))
+            UIImage(cgImage: enhacedImage as! CGImage, scale: 1.0, orientation: .right).draw(in: CGRect(x: 0.0, y: 0.0, width: (enhacedImage?.extent.size.height)!, height: (enhacedImage?.extent.size.width)!))
+            
+            let image = UIGraphicsGetImageFromCurrentImageContext()
+            UIGraphicsEndImageContext()
+        }
+        weakSelf?.hideGLKView(false, completion: {})
+        self.isCapturing = false
+        */
+    }
+    
+    func captureImage() {
+        if isCapturing {
+            return
+        }
+        
+        let photoSettings = AVCapturePhotoSettings()
+        photoSettings.isAutoStillImageStabilizationEnabled = true
+//        photoSettings.isHighResolutionPhotoEnabled = true
+        photoSettings.flashMode = .auto
+        
+        self.stillImageOutput.capturePhoto(with: photoSettings, delegate: self)
+        
+    }
+    @IBAction func doActionTakeAPicture(_ sender: Any) {
+//        self.captureImage()
     }
 }
